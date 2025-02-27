@@ -10,7 +10,7 @@ func main(){
 	mux := http.NewServeMux()
 
 	// Create a New server
-	srv := &http.Server{
+	srv := http.Server{
 		Addr: ":8888",
 		Handler: mux,
 	}
