@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
+	"github.com/EarlMatthews/chirpy/internal/stringValidate"
 )
 
 type apiConfig struct{
@@ -15,6 +16,16 @@ type Chirp struct {
 	Body string `json:"body"`
 }
 
+type Cleanedchirp struct {
+	CleanedBody string `json:"cleaned_body"`
+}
+
+func respondWithJSON(w http.ResponseWriter, code int, payload interface{}){
+	w.WriteHeader(code)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(payload)
+}
+
 func validateChirp(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
@@ -22,23 +33,33 @@ func validateChirp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var chirp Chirp
+	var cleanedChirp Cleanedchirp
+
 	err := json.NewDecoder(r.Body).Decode(&chirp)
 	if err != nil {
 		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
 		return
 	}
+	badWords := []string{"kerfuffle", "sharbert", "fornax"}
 
 	// Here you can add your validation logic for the chirp struct
 	if len(chirp.Body) > 140 {
 		http.Error(w, "{\"error\":\"Chirp is too long\"}", http.StatusBadRequest)
 		return
 	}
+	
+
+	cleanedChirp.CleanedBody = stringValidate.ReplaceWord(chirp.Body,badWords)
+	respondWithJSON(w,http.StatusOK,cleanedChirp)
+
+		
+	
 
 	// If validation passes, you can respond with success or any other appropriate response
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "application/json")
-	response := map[string]bool{"valid": true}
-	json.NewEncoder(w).Encode(response)
+	// w.WriteHeader(http.StatusOK)
+	// w.Header().Set("Content-Type", "application/json")
+	// response := map[string]bool{"valid": true}
+	// json.NewEncoder(w).Encode(response)
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
