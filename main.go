@@ -33,7 +33,14 @@ func metrics (cfg *apiConfig, w http.ResponseWriter, r *http.Request){
 	count := cfg.fileserverHits.Load()
 	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type","text/plain; charset=utf-8")
-	fmt.Fprintf(w, "Hits: %d", count)
+	html := fmt.Sprintf(`
+		<html>
+			<body>
+				<h1>Welcome, Chirpy Admin</h1>
+				<p>Chirpy has been visited %d times!</p>
+			</body>
+		</html>`, count)
+	_, _ = w.Write([]byte(html))
 }
 
 func reset (cfg *apiConfig, w http.ResponseWriter, r *http.Request){
@@ -58,11 +65,11 @@ func main(){
 	
 	mux.Handle("/app/", cfg.middlewareMetricsInc(http.StripPrefix("/app/", http.FileServer(http.Dir(".")))))
 	mux.Handle("/app/assets/", cfg.middlewareMetricsInc(http.StripPrefix("/app/assets/", http.FileServer(http.Dir("assets")))))
-	mux.HandleFunc("GET /api/healthz",healthz)
-	mux.HandleFunc("GET /api/metrics", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /admin/healthz",healthz)
+	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, r *http.Request) {
 		metrics(cfg, w, r)
 	} )
-	mux.HandleFunc("POST /api/reset", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, r *http.Request) {
 		reset(cfg, w, r)
 	} )
 
