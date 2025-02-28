@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -8,6 +9,36 @@ import (
 
 type apiConfig struct{
 	fileserverHits atomic.Int32
+}
+
+type Chirp struct {
+	Body string `json:"body"`
+}
+
+func validateChirp(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var chirp Chirp
+	err := json.NewDecoder(r.Body).Decode(&chirp)
+	if err != nil {
+		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	// Here you can add your validation logic for the chirp struct
+	if len(chirp.Body) > 140 {
+		http.Error(w, "{\"error\":\"Chirp is too long\"}", http.StatusBadRequest)
+		return
+	}
+
+	// If validation passes, you can respond with success or any other appropriate response
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	response := map[string]bool{"valid": true}
+	json.NewEncoder(w).Encode(response)
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -72,6 +103,7 @@ func main(){
 	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, r *http.Request) {
 		reset(cfg, w, r)
 	} )
+	mux.HandleFunc("POST /api/validate_chirp", validateChirp)
 
 	//Starting the new server
 	if err := srv.ListenAndServe(); err != nil {
