@@ -1,15 +1,21 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"sync/atomic"
+
+	"github.com/EarlMatthews/chirpy/internal/database"
 	"github.com/EarlMatthews/chirpy/internal/stringValidate"
+	_ "github.com/lib/pq"
 )
 
 type apiConfig struct{
 	fileserverHits atomic.Int32
+	DB *database.Queries
 }
 
 type Chirp struct {
@@ -104,9 +110,18 @@ func reset (cfg *apiConfig, w http.ResponseWriter, r *http.Request){
 }
 
 func main(){
-	
+	dbURL := os.Getenv("DB_URL")
+
+	db, err := sql.Open("postgres", dbURL)
+	if err != nil{
+		panic(fmt.Sprintf("Failed to connect to the database: %v", err))
+	}
+	defer db.Close()
+
+	dbQueries := database.New(db)
 	mux := http.NewServeMux()
-	cfg := &apiConfig{fileserverHits: atomic.Int32{}}
+	cfg := &apiConfig{fileserverHits: atomic.Int32{}, DB: dbQueries}
+	
 	// Create a New server
 	srv := http.Server{
 		Addr: ":8888",
