@@ -1,21 +1,34 @@
 package main
 
 import (
+
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/EarlMatthews/chirpy/internal/database"
 	"github.com/EarlMatthews/chirpy/internal/stringValidate"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 type apiConfig struct{
 	fileserverHits atomic.Int32
 	DB *database.Queries
+	platform string
+	
+}
+
+type Users struct {
+	ID        string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Email     string `json:"email"`
 }
 
 type Chirp struct {
@@ -30,6 +43,10 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}){
 	w.WriteHeader(code)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(payload)
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+    respondWithJSON(w, code, map[string]string{"error": msg})
 }
 
 func validateChirp(w http.ResponseWriter, r *http.Request) {
@@ -57,15 +74,6 @@ func validateChirp(w http.ResponseWriter, r *http.Request) {
 
 	cleanedChirp.CleanedBody = stringValidate.ReplaceWord(chirp.Body,badWords)
 	respondWithJSON(w,http.StatusOK,cleanedChirp)
-
-		
-	
-
-	// If validation passes, you can respond with success or any other appropriate response
-	// w.WriteHeader(http.StatusOK)
-	// w.Header().Set("Content-Type", "application/json")
-	// response := map[string]bool{"valid": true}
-	// json.NewEncoder(w).Encode(response)
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -77,6 +85,36 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 		// Call the next handler in the chain
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (cfg *apiConfig)createUser (w http.ResponseWriter, r *http.Request){
+	if r.Method != http.MethodPost {
+		//http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
+		
+		return
+	}
+
+	var user Users
+	err := json.NewDecoder(r.Body).Decode(&user)
+	if err != nil {
+		respondWithError(w,http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+
+	dbuser, err := cfg.DB.CreateUser(r.Context(), user.Email)
+	if err != nil{
+		respondWithError(w,http.StatusBadRequest, "Error Connecting to Database" + err.Error())
+		return
+	}
+
+	userResponse := Users{
+    ID:        dbuser.ID.UUID.String(),
+    CreatedAt: dbuser.CreatedAt.Time.Format(time.RFC3339), // Formats to ISO-8601
+    UpdatedAt: dbuser.UpdatedAt.Time.Format(time.RFC3339),
+    Email:     dbuser.Email,
+	}
+	respondWithJSON(w,http.StatusCreated,userResponse)
 }
 
 func healthz(w http.ResponseWriter, r *http.Request){
@@ -101,16 +139,33 @@ func metrics (cfg *apiConfig, w http.ResponseWriter, r *http.Request){
 	_, _ = w.Write([]byte(html))
 }
 
-func reset (cfg *apiConfig, w http.ResponseWriter, r *http.Request){
+func (cfg *apiConfig)reset (w http.ResponseWriter, r *http.Request){
 	//Finally, create and register a handler on the /reset path that,
 	//when hit, will reset your fileserverHits back to 0
 	cfg.fileserverHits.Store(0)
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type","text/plain; charset=utf-8")
+
+	if cfg.platform == "dev" {
+		err := cfg.DB.DeleteUser(r.Context())
+		if err != nil{
+			respondWithError(w,http.StatusBadRequest, "Error Connecting to Database" + err.Error())
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Content-Type","text/plain; charset=utf-8")
+	} else {
+		w.WriteHeader(http.StatusForbidden)
+	}
+	
 }
 
 func main(){
+	err := godotenv.Load()
+	if err != nil {
+    	log.Fatalf("Error loading .env file")
+	}
 	dbURL := os.Getenv("DB_URL")
+
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil{
@@ -120,8 +175,7 @@ func main(){
 
 	dbQueries := database.New(db)
 	mux := http.NewServeMux()
-	cfg := &apiConfig{fileserverHits: atomic.Int32{}, DB: dbQueries}
-	
+	cfg := &apiConfig{fileserverHits: atomic.Int32{}, DB: dbQueries, platform: os.Getenv("PLATFORM")}
 	// Create a New server
 	srv := http.Server{
 		Addr: ":8888",
@@ -136,11 +190,9 @@ func main(){
 	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, r *http.Request) {
 		metrics(cfg, w, r)
 	} )
-	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, r *http.Request) {
-		reset(cfg, w, r)
-	} )
+	mux.HandleFunc("POST /admin/reset", cfg.reset)
 	mux.HandleFunc("POST /api/validate_chirp", validateChirp)
-
+	mux.HandleFunc("POST /api/users", cfg.createUser)
 	//Starting the new server
 	if err := srv.ListenAndServe(); err != nil {
         panic(err)
