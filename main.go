@@ -10,9 +10,8 @@ import (
 	"os"
 	"sync/atomic"
 	"time"
-
+	"github.com/google/uuid"
 	"github.com/EarlMatthews/chirpy/internal/database"
-	"github.com/EarlMatthews/chirpy/internal/stringValidate"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -33,6 +32,7 @@ type Users struct {
 
 type Chirp struct {
 	Body string `json:"body"`
+	UserID string `json:"user_id"`
 }
 
 type Cleanedchirp struct {
@@ -49,31 +49,41 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
     respondWithJSON(w, code, map[string]string{"error": msg})
 }
 
-func validateChirp(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig)chirps(w http.ResponseWriter, r *http.Request){
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
-		return
-	}
-
+ 		return
+ 	}
 	var chirp Chirp
-	var cleanedChirp Cleanedchirp
-
 	err := json.NewDecoder(r.Body).Decode(&chirp)
 	if err != nil {
-		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
-		return
-	}
-	badWords := []string{"kerfuffle", "sharbert", "fornax"}
+ 		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
+ 		return
+ 	}
+	if len(chirp.Body) > 140{
+		respondWithError(w,http.StatusBadRequest,"{\"error\":\"Chirp is too long\"}")
+	} 
+	chirpUserID, err := uuid.Parse(chirp.UserID)
+	if err != nil{
+		respondWithError(w, http.StatusBadRequest, "Invalid UUID format")
+    	return
+	} 
+	params := database.CreateChirpParams{
+        Body:   sql.NullString{String: chirp.Body, Valid: true},
+		UserID: uuid.NullUUID{UUID: chirpUserID, Valid: true},
+    }
 
-	// Here you can add your validation logic for the chirp struct
-	if len(chirp.Body) > 140 {
-		http.Error(w, "{\"error\":\"Chirp is too long\"}", http.StatusBadRequest)
-		return
+	dbChirp, err := cfg.DB.CreateChirp(r.Context(),params)
+	if err != nil{
+	respondWithError(w,http.StatusBadRequest, "Error Connecting to Database" + err.Error())
+	return
 	}
-	
 
-	cleanedChirp.CleanedBody = stringValidate.ReplaceWord(chirp.Body,badWords)
-	respondWithJSON(w,http.StatusOK,cleanedChirp)
+	chirpResponse := Chirp{
+		Body: dbChirp.Body.String,
+		UserID: dbChirp.UserID.UUID.String(),
+	}
+	respondWithJSON(w, http.StatusCreated,chirpResponse)
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -109,7 +119,7 @@ func (cfg *apiConfig)createUser (w http.ResponseWriter, r *http.Request){
 	}
 
 	userResponse := Users{
-    ID:        dbuser.ID.UUID.String(),
+	ID:        dbuser.ID.String(),
     CreatedAt: dbuser.CreatedAt.Time.Format(time.RFC3339), // Formats to ISO-8601
     UpdatedAt: dbuser.UpdatedAt.Time.Format(time.RFC3339),
     Email:     dbuser.Email,
@@ -191,7 +201,8 @@ func main(){
 		metrics(cfg, w, r)
 	} )
 	mux.HandleFunc("POST /admin/reset", cfg.reset)
-	mux.HandleFunc("POST /api/validate_chirp", validateChirp)
+	//mux.HandleFunc("POST /api/validate_chirp", validateChirp)
+	mux.HandleFunc("POST /api/chirps", cfg.chirps)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
 	//Starting the new server
 	if err := srv.ListenAndServe(); err != nil {
