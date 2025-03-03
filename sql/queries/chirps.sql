@@ -8,3 +8,9 @@ VALUES (
     $2
 )
 RETURNING *;
+
+-- name: ShowChirpsAll :many
+SELECT * FROM chirps;
+
+-- name: ShowOneChirp :one
+SELECT * from chirps where id = $1;

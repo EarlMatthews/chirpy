@@ -35,6 +35,14 @@ type Chirp struct {
 	UserID string `json:"user_id"`
 }
 
+type ChirpShown struct {
+	ID 			string `json:"id"`
+	CreatedAt	string `json:"created_at"`
+	UpdatedAt	string `json:"updated_at"`
+	Body		string `json:"body"`
+	UserID		string `json:"user_id"`
+}
+
 type Cleanedchirp struct {
 	CleanedBody string `json:"cleaned_body"`
 }
@@ -47,6 +55,51 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}){
 
 func respondWithError(w http.ResponseWriter, code int, msg string) {
     respondWithJSON(w, code, map[string]string{"error": msg})
+}
+
+func (cfg *apiConfig) showChirps(w http.ResponseWriter, r *http.Request){
+	
+	dbChirp, err := cfg.DB.ShowChirpsAll(r.Context())
+	if err != nil{
+	respondWithError(w,http.StatusBadRequest, "Error Connecting to Database" + err.Error())
+	return
+	}
+
+	var chirpResponse []ChirpShown
+	for _, chirp := range dbChirp {
+		chirpResponse = append(chirpResponse, ChirpShown{
+			ID:		chirp.ID.String(),
+			CreatedAt: chirp.CreatedAt.Time.String(),
+			UpdatedAt: chirp.UpdatedAt.Time.String(),
+			Body: chirp.Body.String,
+			UserID: chirp.UserID.UUID.String(),
+		})
+	}
+	respondWithJSON(w, http.StatusOK,chirpResponse)
+}
+
+func (cfg *apiConfig) showOneChirp(w http.ResponseWriter, r *http.Request){
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil{
+		respondWithError(w,http.StatusNotFound,"Invalid UUID")
+		return
+	}
+
+	dbChirp, err := cfg.DB.ShowOneChirp(r.Context(), chirpID)
+	if err != nil{
+		respondWithError(w,http.StatusNotFound,"Invalid UUID")
+		return
+	}
+	chirpResponse := ChirpShown{
+		ID:			dbChirp.ID.String(),
+		CreatedAt:	dbChirp.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:	dbChirp.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		Body:		dbChirp.Body.String,
+		UserID:		dbChirp.UserID.UUID.String(),
+	}
+
+	respondWithJSON(w,http.StatusOK,chirpResponse)
+
 }
 
 func (cfg *apiConfig)chirps(w http.ResponseWriter, r *http.Request){
@@ -79,9 +132,17 @@ func (cfg *apiConfig)chirps(w http.ResponseWriter, r *http.Request){
 	return
 	}
 
-	chirpResponse := Chirp{
-		Body: dbChirp.Body.String,
-		UserID: dbChirp.UserID.UUID.String(),
+	// chirpResponse := Chirp{
+	// 	Body: dbChirp.Body.String,
+	// 	UserID: dbChirp.UserID.UUID.String(),
+	// }
+
+	chirpResponse := ChirpShown{
+		ID:			dbChirp.ID.String(),
+		CreatedAt:	dbChirp.CreatedAt.Time.UTC().Format(time.RFC3339),
+		UpdatedAt:	dbChirp.UpdatedAt.Time.UTC().Format(time.RFC3339),
+		Body:		dbChirp.Body.String,
+		UserID:		dbChirp.UserID.UUID.String(),
 	}
 	respondWithJSON(w, http.StatusCreated,chirpResponse)
 }
@@ -204,6 +265,8 @@ func main(){
 	//mux.HandleFunc("POST /api/validate_chirp", validateChirp)
 	mux.HandleFunc("POST /api/chirps", cfg.chirps)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
+	mux.HandleFunc("GET /api/chirps", cfg.showChirps)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.showOneChirp)
 	//Starting the new server
 	if err := srv.ListenAndServe(); err != nil {
         panic(err)

@@ -9,7 +9,7 @@ import (
 	"context"
 )
 
-const deleteUser = `-- name: deleteUser :exec
+const deleteUser = `-- name: DeleteUser :exec
 DELETE FROM users
 `
 
