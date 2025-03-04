@@ -12,6 +12,7 @@ import (
 	"time"
 	"github.com/google/uuid"
 	"github.com/EarlMatthews/chirpy/internal/database"
+	"github.com/EarlMatthews/chirpy/internal/auth"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -28,7 +29,15 @@ type Users struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 	Email     string `json:"email"`
+	Password  string  `json:"password,omitempty"`
 }
+
+// type UsersNoPassword struct {
+// 	ID        string `json:"id"`
+// 	CreatedAt string `json:"created_at"`
+// 	UpdatedAt string `json:"updated_at"`
+// 	Email     string `json:"email"`
+// }
 
 type Chirp struct {
 	Body string `json:"body"`
@@ -171,9 +180,15 @@ func (cfg *apiConfig)createUser (w http.ResponseWriter, r *http.Request){
 		respondWithError(w,http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
-
-
-	dbuser, err := cfg.DB.CreateUser(r.Context(), user.Email)
+	hashedpassword, err := auth.HashPassword(user.Password)
+	if err != nil{
+		respondWithError(w,http.StatusBadRequest,"bad hash")
+	}
+	newUser := database.CreateUserParams{
+		Email: user.Email,
+		HashedPassword: hashedpassword,
+	}
+	dbuser, err := cfg.DB.CreateUser(r.Context(), newUser)
 	if err != nil{
 		respondWithError(w,http.StatusBadRequest, "Error Connecting to Database" + err.Error())
 		return
