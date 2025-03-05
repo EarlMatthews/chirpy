@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 	"github.com/EarlMatthews/chirpy/internal/auth"
+	"net/http"
 )
 
 func TestHashPassword(t *testing.T) {
@@ -56,5 +57,56 @@ func TestValidateJWT_InvalidToken(t *testing.T) {
 	_, err := auth.ValidateJWT(invalidToken, tokenSecret)
 	if err == nil {
 		t.Errorf("Expected error for invalid token, got none")
+	}
+}
+
+func TestGetBearerToken(t *testing.T) {
+	testCases := []struct {
+		name          string
+		headers       http.Header
+		expectedToken string
+		expectError   bool
+	}{
+		{
+			name: "Valid Bearer Token",
+			headers: func() http.Header {
+				h := make(http.Header)
+				h.Add("Authorization", "Bearer abc123")
+				return h
+			}(),
+			expectedToken: "abc123",
+			expectError:   false,
+		},
+		{
+			name: "Invalid Bearer Token",
+			headers: func() http.Header {
+				h := make(http.Header)
+				h.Add("Authorization", "Basic abc123")
+				return h
+			}(),
+			expectedToken: "",
+			expectError:   true,
+		},
+		{
+			name: "No Authorization Header",
+			headers: func() http.Header {
+				h := make(http.Header)
+				return h
+			}(),
+			expectedToken: "",
+			expectError:   true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			token, err := auth.GetBearerToken(tc.headers)
+			if (err != nil) != tc.expectError {
+				t.Errorf("GetBearerToken() error = %v, expectError = %v", err, tc.expectError)
+			}
+			if token != tc.expectedToken {
+				t.Errorf("GetBearerToken() got = %v, want = %v", token, tc.expectedToken)
+			}
+		})
 	}
 }

@@ -1,12 +1,25 @@
 package auth
 
 import (
-	"time"
 	"fmt"
+	"net/http"
+	"strings"
+	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
+
+func GetBearerToken(headers http.Header) (string, error){
+	authHeader:= headers.Get("Authorization")
+	if strings.HasPrefix(authHeader,"Bearer "){
+		token := authHeader[len("Bearer "):]
+		return token, nil
+	}else{
+		return "", fmt.Errorf("invalid authorization header")
+	}
+}
 
 func HashPassword(password string) (string, error){
 	hash, err := bcrypt.GenerateFromPassword([]byte(password,),bcrypt.DefaultCost)
