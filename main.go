@@ -66,6 +66,51 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
     respondWithJSON(w, code, map[string]string{"error": msg})
 }
 
+func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
+	if r.Method != http.MethodPost {
+		//http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
+		
+		return
+	}
+
+	var user Users
+	err := json.NewDecoder(r.Body).Decode(&user)
+	if err != nil {
+		respondWithError(w,http.StatusBadRequest, "Invalid JSON body")
+		return
+	}
+
+	// hashedpassword, err := auth.HashPassword(user.Password)
+	// if err != nil{
+	// 	respondWithError(w,http.StatusBadRequest,"bad hash")
+	// 	return
+	// }
+
+	var retrUser database.User
+
+	retrUser, err = cfg.DB.Login(r.Context(),user.Email)
+	if err != nil{
+		respondWithError(w,http.StatusUnauthorized, "Incorrect email or password")
+		return
+	}
+	err = auth.CheckPasswordHash(user.Password, retrUser.HashedPassword)
+	if err == nil {
+    	// Passwords match
+    	retrUser.HashedPassword = ""
+		userResponse := Users{
+			ID:        retrUser.ID.String(),
+    		CreatedAt: retrUser.CreatedAt.Time.Format(time.RFC3339), // Formats to ISO-8601
+    		UpdatedAt: retrUser.UpdatedAt.Time.Format(time.RFC3339),
+    		Email:		retrUser.Email,
+			}
+    	respondWithJSON(w, http.StatusOK, userResponse)
+	} else {
+    	// Passwords don't match
+    	respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
+    	return
+	}
+}
+
 func (cfg *apiConfig) showChirps(w http.ResponseWriter, r *http.Request){
 	
 	dbChirp, err := cfg.DB.ShowChirpsAll(r.Context())
@@ -280,6 +325,7 @@ func main(){
 	//mux.HandleFunc("POST /api/validate_chirp", validateChirp)
 	mux.HandleFunc("POST /api/chirps", cfg.chirps)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
+	mux.HandleFunc("POST /api/login",cfg.login)
 	mux.HandleFunc("GET /api/chirps", cfg.showChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.showOneChirp)
 	//Starting the new server
