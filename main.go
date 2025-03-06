@@ -1,18 +1,19 @@
 package main
 
 import (
-
 	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"sync/atomic"
 	"time"
-	"github.com/google/uuid"
-	"github.com/EarlMatthews/chirpy/internal/database"
+
 	"github.com/EarlMatthews/chirpy/internal/auth"
+	"github.com/EarlMatthews/chirpy/internal/database"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -21,6 +22,7 @@ type apiConfig struct{
 	fileserverHits atomic.Int32
 	DB *database.Queries
 	platform string
+	secret	string
 	
 }
 
@@ -30,6 +32,8 @@ type Users struct {
 	UpdatedAt string `json:"updated_at"`
 	Email     string `json:"email"`
 	Password  string  `json:"password,omitempty"`
+	Expires	string	`json:"expires_in_seconds,omitempty"`
+	Token	string	`json:"token,omitempty"`
 }
 
 // type UsersNoPassword struct {
@@ -41,7 +45,7 @@ type Users struct {
 
 type Chirp struct {
 	Body string `json:"body"`
-	UserID string `json:"user_id"`
+	//UserID string `json:"user_id"`
 }
 
 type ChirpShown struct {
@@ -80,11 +84,13 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	// hashedpassword, err := auth.HashPassword(user.Password)
-	// if err != nil{
-	// 	respondWithError(w,http.StatusBadRequest,"bad hash")
-	// 	return
-	// }
+	expires, err := strconv.Atoi(user.Expires)
+		if err != nil{
+			expires = 3600
+		}else if expires > 3600{
+			expires = 3600
+		}
+	
 
 	var retrUser database.User
 
@@ -103,6 +109,13 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
     		UpdatedAt: retrUser.UpdatedAt.Time.Format(time.RFC3339),
     		Email:		retrUser.Email,
 			}
+
+		// Generate a token and add it to userResponse
+		newToken, err := auth.MakeJWT(retrUser.ID, cfg.secret, time.Duration(expires*int(time.Minute)))
+		if err != nil{
+			respondWithError(w,http.StatusUnauthorized, "Bad Token")
+		}
+		userResponse.Token = newToken
     	respondWithJSON(w, http.StatusOK, userResponse)
 	} else {
     	// Passwords don't match
@@ -161,8 +174,17 @@ func (cfg *apiConfig)chirps(w http.ResponseWriter, r *http.Request){
 		http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
  		return
  	}
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w,http.StatusUnauthorized,err.Error())
+	}
+	userid, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		respondWithError(w,http.StatusUnauthorized,"Bad Token " + err.Error())
+	}
+
 	var chirp Chirp
-	err := json.NewDecoder(r.Body).Decode(&chirp)
+	err = json.NewDecoder(r.Body).Decode(&chirp)
 	if err != nil {
  		http.Error(w, "Invalid JSON body", http.StatusBadRequest)
  		return
@@ -170,11 +192,7 @@ func (cfg *apiConfig)chirps(w http.ResponseWriter, r *http.Request){
 	if len(chirp.Body) > 140{
 		respondWithError(w,http.StatusBadRequest,"{\"error\":\"Chirp is too long\"}")
 	} 
-	chirpUserID, err := uuid.Parse(chirp.UserID)
-	if err != nil{
-		respondWithError(w, http.StatusBadRequest, "Invalid UUID format")
-    	return
-	} 
+	chirpUserID := userid
 	params := database.CreateChirpParams{
         Body:   sql.NullString{String: chirp.Body, Valid: true},
 		UserID: uuid.NullUUID{UUID: chirpUserID, Valid: true},
@@ -306,7 +324,7 @@ func main(){
 
 	dbQueries := database.New(db)
 	mux := http.NewServeMux()
-	cfg := &apiConfig{fileserverHits: atomic.Int32{}, DB: dbQueries, platform: os.Getenv("PLATFORM")}
+	cfg := &apiConfig{fileserverHits: atomic.Int32{}, DB: dbQueries, platform: os.Getenv("PLATFORM"), secret: os.Getenv("SECRET")}
 	// Create a New server
 	srv := http.Server{
 		Addr: ":8888",
