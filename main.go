@@ -358,25 +358,40 @@ func (cfg *apiConfig) refresh(w http.ResponseWriter, r *http.Request){
 		respondWithError(w,http.StatusUnauthorized,"Token Revoked")
 		return
 	}
-	// Revoke the old refresh token
+	 accessToken, err := auth.MakeJWT(refreshTokenInfo.UserID.UUID, cfg.secret, time.Hour)
+    if err != nil {
+        respondWithError(w, http.StatusInternalServerError, "Couldn't create access token")
+        return
+    }
+	//cfg.DB.StoreRefreshToken(r.Context(),refreshTokenParams)
+	respondWithJSON(w,http.StatusOK,map[string]string{"token": accessToken})
+
+}
+
+func (cfg *apiConfig) revoke(w http.ResponseWriter, r *http.Request){
+	// Check if the request method is POST. If not, return without processing.
+	if r.Method != http.MethodPost {
+		//http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
+		
+		return
+	}
+	// read the refresh token from the header, if no refresh token quit
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil{
+		respondWithError(w,http.StatusUnauthorized, "No refresh token found")
+		return
+	}
+	// look up refresh token in the database and get the UUID associated 
+	// refreshTokenInfo, err := cfg.DB.RetrieveRefreshToken(r.Context(),refreshToken)
+	// if err != nil{
+	// 	respondWithError(w, http.StatusUnauthorized,"Token Not Found")
+	// 	return
+	// }
 	err = cfg.DB.RevokeRefreshToken(r.Context(),refreshToken)
 	if err != nil{
-		respondWithError(w,http.StatusUnauthorized,"Revoke Error")
-		return
+		respondWithError(w,http.StatusUnauthorized,"Error revoking token")
 	}
-	// create a new refresh token, store and return it
-	newRefreshToken, err := auth.MakeRefreshToken()
-	if err != nil {
-		respondWithError(w,http.StatusUnauthorized,"Error making new token")
-		return
-	}
-	refreshTokenParams := database.StoreRefreshTokenParams{
-		Token: newRefreshToken,
-		UserID: refreshTokenInfo.UserID,
-	}
-	cfg.DB.StoreRefreshToken(r.Context(),refreshTokenParams)
-	respondWithJSON(w,http.StatusOK,refreshToken)
-
+	respondWithJSON(w,http.StatusNoContent,nil)
 }
 
 func main(){
@@ -416,6 +431,7 @@ func main(){
 	mux.HandleFunc("POST /api/users", cfg.createUser)
 	mux.HandleFunc("POST /api/login",cfg.login)
 	mux.HandleFunc("POST /api/refresh", cfg.refresh)
+	mux.HandleFunc("POST /api/revoke", cfg.revoke)
 	mux.HandleFunc("GET /api/chirps", cfg.showChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.showOneChirp)
 	//Starting the new server
