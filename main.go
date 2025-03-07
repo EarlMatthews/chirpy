@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -32,8 +31,9 @@ type Users struct {
 	UpdatedAt string `json:"updated_at"`
 	Email     string `json:"email"`
 	Password  string  `json:"password,omitempty"`
-	Expires	string	`json:"expires_in_seconds,omitempty"`
+	//Expires	string	`json:"expires_in_seconds,omitempty"`
 	Token	string	`json:"token,omitempty"`
+	RefreshToken string	`json:"refresh_token"`
 }
 
 // type UsersNoPassword struct {
@@ -71,37 +71,35 @@ func respondWithError(w http.ResponseWriter, code int, msg string) {
 }
 
 func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
+	// Check if the request method is POST. If not, return without processing.
 	if r.Method != http.MethodPost {
 		//http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
 		
 		return
 	}
-
+	// Declare a variable 'user' of type Users to hold the user data from the request body.
 	var user Users
+
+	// Decode the JSON body of the request into the 'user' variable.
 	err := json.NewDecoder(r.Body).Decode(&user)
 	if err != nil {
 		respondWithError(w,http.StatusBadRequest, "Invalid JSON body")
 		return
 	}
 
-	expires, err := strconv.Atoi(user.Expires)
-		if err != nil{
-			expires = 3600
-		}else if expires > 3600{
-			expires = 3600
-		}
-	
-
+	// Declare a variable 'retrUser' of type database.User to store the retrieved user data from the database.
 	var retrUser database.User
 
+	// Attempt to log in the user by fetching the user with the given email from the database.
 	retrUser, err = cfg.DB.Login(r.Context(),user.Email)
+	// If there's an error (e.g., user not found), respond with an Unauthorized status and message.
 	if err != nil{
 		respondWithError(w,http.StatusUnauthorized, "Incorrect email or password")
 		return
 	}
 	err = auth.CheckPasswordHash(user.Password, retrUser.HashedPassword)
 	if err == nil {
-    	// Passwords match
+    	// // If passwords match, prepare a response object with user details.
     	retrUser.HashedPassword = ""
 		userResponse := Users{
 			ID:        retrUser.ID.String(),
@@ -110,15 +108,37 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
     		Email:		retrUser.Email,
 			}
 
-		// Generate a token and add it to userResponse
-		newToken, err := auth.MakeJWT(retrUser.ID, cfg.secret, time.Duration(expires*int(time.Minute)))
+		// Generate a JWT token for the authenticated user.
+		newToken, err := auth.MakeJWT(retrUser.ID, cfg.secret, time.Duration(1 * int(time.Hour)))
 		if err != nil{
+			// If there's an error in generating the token, respond with an Unauthorized status and message.
 			respondWithError(w,http.StatusUnauthorized, "Bad Token")
+			return
 		}
 		userResponse.Token = newToken
+		newRefreshToken, err := auth.MakeRefreshToken()
+		if err != nil{
+			respondWithError(w,http.StatusUnauthorized,"Bad Refresh Token")
+			return
+		}
+		userResponse.RefreshToken = newRefreshToken
+		refresh_user_uuid, err := uuid.Parse(userResponse.ID)
+		if err != nil{
+			respondWithError(w,http.StatusUnauthorized,"Error Creating UUID")
+			return
+		}
+		refreshTokenParams := database.StoreRefreshTokenParams{
+			Token: newRefreshToken,
+			UserID: uuid.NullUUID{UUID: refresh_user_uuid, Valid: true},
+		}
+		err = cfg.DB.StoreRefreshToken(r.Context(), refreshTokenParams)
+		if err != nil{
+			respondWithError(w,http.StatusUnauthorized,"Problem storing Refresh Token")
+			return
+		}
     	respondWithJSON(w, http.StatusOK, userResponse)
 	} else {
-    	// Passwords don't match
+    	// If passwords don't match, respond with an Unauthorized status and message.
     	respondWithError(w, http.StatusUnauthorized, "Incorrect email or password")
     	return
 	}

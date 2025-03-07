@@ -7,6 +7,8 @@ package database
 
 import (
 	"context"
+
+	"github.com/google/uuid"
 )
 
 const login = `-- name: Login :one
@@ -24,4 +26,26 @@ func (q *Queries) Login(ctx context.Context, email string) (User, error) {
 		&i.HashedPassword,
 	)
 	return i, err
+}
+
+const storeRefreshToken = `-- name: StoreRefreshToken :exec
+INSERT INTO refresh_tokens (token, created_at, updated_at, user_id, expires_at, revoked_at)
+VALUES ( 
+    $1,
+    NOW(),
+    NOW(),
+    $2,
+    NOW() + INTERVAL '60 days',
+    NULL
+)
+`
+
+type StoreRefreshTokenParams struct {
+	Token  string
+	UserID uuid.NullUUID
+}
+
+func (q *Queries) StoreRefreshToken(ctx context.Context, arg StoreRefreshTokenParams) error {
+	_, err := q.db.ExecContext(ctx, storeRefreshToken, arg.Token, arg.UserID)
+	return err
 }

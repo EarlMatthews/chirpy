@@ -16,6 +16,17 @@ CREATE TABLE chirps(
     body TEXT,
     user_id UUID REFERENCES users(id) ON DELETE CASCADE
 );
+
+CREATE TABLE refresh_tokens(
+    token       TEXT PRIMARY KEY,
+    created_at  TIMESTAMPTZ,
+    updated_at  TIMESTAMPTZ,
+    user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+    expires_at  TIMESTAMPTZ,
+    revoked_at  TIMESTAMPTZ
+);
+
 -- +goose Down
 DROP TABLE chirps;
 DROP TABLE users;
+DROP TABLE refresh_tokens;
