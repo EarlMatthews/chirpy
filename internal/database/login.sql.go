@@ -81,3 +81,30 @@ func (q *Queries) StoreRefreshToken(ctx context.Context, arg StoreRefreshTokenPa
 	_, err := q.db.ExecContext(ctx, storeRefreshToken, arg.Token, arg.UserID)
 	return err
 }
+
+const updateAuth = `-- name: UpdateAuth :one
+UPDATE users
+SET email = $2,
+    hashed_password = $3
+WHERE id = $1
+RETURNING id, created_at, updated_at, email, hashed_password
+`
+
+type UpdateAuthParams struct {
+	ID             uuid.UUID
+	Email          string
+	HashedPassword string
+}
+
+func (q *Queries) UpdateAuth(ctx context.Context, arg UpdateAuthParams) (User, error) {
+	row := q.db.QueryRowContext(ctx, updateAuth, arg.ID, arg.Email, arg.HashedPassword)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Email,
+		&i.HashedPassword,
+	)
+	return i, err
+}

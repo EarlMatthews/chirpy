@@ -22,3 +22,10 @@ SET revoked_at = NOW(),
     updated_at = NOW()
 
 WHERE token = $1;
+
+-- name: UpdateAuth :one
+UPDATE users
+SET email = $2,
+    hashed_password = $3
+WHERE id = $1
+RETURNING *;

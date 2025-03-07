@@ -394,6 +394,52 @@ func (cfg *apiConfig) revoke(w http.ResponseWriter, r *http.Request){
 	respondWithJSON(w,http.StatusNoContent,nil)
 }
 
+func (cfg *apiConfig) updateuser(w http.ResponseWriter, r *http.Request){
+	// Check if the request method is PUT. If not, return without processing.
+	if r.Method != http.MethodPut {
+		//http.Error(w, "Method is not PUT", http.StatusMethodNotAllowed)
+		return
+	}
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w,http.StatusUnauthorized,err.Error())
+		return
+	}
+	userid, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		respondWithError(w,http.StatusUnauthorized,"Bad Token " + err.Error())
+	}
+	// check body to see if both email and password are populated
+	type UserInfo struct{
+		email string 
+		password string
+	}
+	var ui UserInfo
+	err = json.NewDecoder(r.Body).Decode(&ui)
+		if err != nil{
+			respondWithError(w,http.StatusUnauthorized, err.Error())
+		}
+	ui.password, err = auth.HashPassword(ui.password)
+	if err != nil{
+		respondWithError(w, http.StatusUnauthorized, err.Error())
+	}
+	// update email and password of user in database
+	params := database.UpdateAuthParams{
+		ID:		userid,
+		Email: 	ui.email,
+		HashedPassword: ui.password,
+	}
+	
+	user, err := cfg.DB.UpdateAuth(r.Context(),params)
+	if err != nil{
+		respondWithError(w,http.StatusUnauthorized,err.Error())
+		return
+	}
+	respondWithJSON(w,http.StatusOK,user)
+
+}
+
 func main(){
 	err := godotenv.Load()
 	if err != nil {
@@ -432,6 +478,7 @@ func main(){
 	mux.HandleFunc("POST /api/login",cfg.login)
 	mux.HandleFunc("POST /api/refresh", cfg.refresh)
 	mux.HandleFunc("POST /api/revoke", cfg.revoke)
+	mux.HandleFunc("PUT /api/users", cfg.updateuser)
 	mux.HandleFunc("GET /api/chirps", cfg.showChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.showOneChirp)
 	//Starting the new server
