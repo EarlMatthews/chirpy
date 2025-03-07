@@ -121,12 +121,14 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
 			respondWithError(w,http.StatusUnauthorized,"Bad Refresh Token")
 			return
 		}
+		// Create a new refresh token
 		userResponse.RefreshToken = newRefreshToken
 		refresh_user_uuid, err := uuid.Parse(userResponse.ID)
 		if err != nil{
 			respondWithError(w,http.StatusUnauthorized,"Error Creating UUID")
 			return
 		}
+		// store the refresh token in the database
 		refreshTokenParams := database.StoreRefreshTokenParams{
 			Token: newRefreshToken,
 			UserID: uuid.NullUUID{UUID: refresh_user_uuid, Valid: true},
@@ -136,6 +138,7 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
 			respondWithError(w,http.StatusUnauthorized,"Problem storing Refresh Token")
 			return
 		}
+		// return the user Response
     	respondWithJSON(w, http.StatusOK, userResponse)
 	} else {
     	// If passwords don't match, respond with an Unauthorized status and message.
@@ -328,6 +331,54 @@ func (cfg *apiConfig)reset (w http.ResponseWriter, r *http.Request){
 	
 }
 
+func (cfg *apiConfig) refresh(w http.ResponseWriter, r *http.Request){
+	// Check if the request method is POST. If not, return without processing.
+	if r.Method != http.MethodPost {
+		//http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
+		
+		return
+	}
+	// read the refresh token from the header, if no refresh token quit
+	refreshToken, err := auth.GetBearerToken(r.Header)
+	if err != nil{
+		respondWithError(w,http.StatusUnauthorized, "No refresh token found")
+		return
+	}
+	// look up refresh token in the database and get the UUID associated 
+	refreshTokenInfo, err := cfg.DB.RetrieveRefreshToken(r.Context(),refreshToken)
+	if err != nil{
+		respondWithError(w, http.StatusUnauthorized,"Token Not Found")
+		return
+	}
+	if time.Now().After(refreshTokenInfo.ExpiresAt.Time){
+		respondWithError(w,http.StatusUnauthorized,"Token Expired")
+		return
+	}
+	if refreshTokenInfo.RevokedAt.Valid {
+		respondWithError(w,http.StatusUnauthorized,"Token Revoked")
+		return
+	}
+	// Revoke the old refresh token
+	err = cfg.DB.RevokeRefreshToken(r.Context(),refreshToken)
+	if err != nil{
+		respondWithError(w,http.StatusUnauthorized,"Revoke Error")
+		return
+	}
+	// create a new refresh token, store and return it
+	newRefreshToken, err := auth.MakeRefreshToken()
+	if err != nil {
+		respondWithError(w,http.StatusUnauthorized,"Error making new token")
+		return
+	}
+	refreshTokenParams := database.StoreRefreshTokenParams{
+		Token: newRefreshToken,
+		UserID: refreshTokenInfo.UserID,
+	}
+	cfg.DB.StoreRefreshToken(r.Context(),refreshTokenParams)
+	respondWithJSON(w,http.StatusOK,refreshToken)
+
+}
+
 func main(){
 	err := godotenv.Load()
 	if err != nil {
@@ -364,6 +415,7 @@ func main(){
 	mux.HandleFunc("POST /api/chirps", cfg.chirps)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
 	mux.HandleFunc("POST /api/login",cfg.login)
+	mux.HandleFunc("POST /api/refresh", cfg.refresh)
 	mux.HandleFunc("GET /api/chirps", cfg.showChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.showOneChirp)
 	//Starting the new server
