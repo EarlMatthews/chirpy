@@ -412,23 +412,23 @@ func (cfg *apiConfig) updateuser(w http.ResponseWriter, r *http.Request){
 	}
 	// check body to see if both email and password are populated
 	type UserInfo struct{
-		email string 
-		password string
+		Email string 
+		Password string
 	}
 	var ui UserInfo
 	err = json.NewDecoder(r.Body).Decode(&ui)
 		if err != nil{
 			respondWithError(w,http.StatusUnauthorized, err.Error())
 		}
-	ui.password, err = auth.HashPassword(ui.password)
+	ui.Password, err = auth.HashPassword(ui.Password)
 	if err != nil{
 		respondWithError(w, http.StatusUnauthorized, err.Error())
 	}
 	// update email and password of user in database
 	params := database.UpdateAuthParams{
 		ID:		userid,
-		Email: 	ui.email,
-		HashedPassword: ui.password,
+		Email: 	ui.Email,
+		HashedPassword: ui.Password,
 	}
 	
 	user, err := cfg.DB.UpdateAuth(r.Context(),params)
@@ -436,8 +436,8 @@ func (cfg *apiConfig) updateuser(w http.ResponseWriter, r *http.Request){
 		respondWithError(w,http.StatusUnauthorized,err.Error())
 		return
 	}
-	respondWithJSON(w,http.StatusOK,user)
-
+	respondWithJSON(w,http.StatusOK,map[string]string{"email": user.Email})
+	
 }
 
 func main(){
