@@ -409,6 +409,7 @@ func (cfg *apiConfig) updateuser(w http.ResponseWriter, r *http.Request){
 	userid, err := auth.ValidateJWT(token, cfg.secret)
 	if err != nil {
 		respondWithError(w,http.StatusUnauthorized,"Bad Token " + err.Error())
+		return
 	}
 	// check body to see if both email and password are populated
 	type UserInfo struct{
@@ -438,6 +439,49 @@ func (cfg *apiConfig) updateuser(w http.ResponseWriter, r *http.Request){
 	}
 	respondWithJSON(w,http.StatusOK,map[string]string{"email": user.Email})
 	
+}
+
+func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, r *http.Request){
+	// Check if the request method is DELETE. If not, return without processing.
+	if r.Method != http.MethodDelete {
+		//http.Error(w, "Method is not DELETE", http.StatusMethodNotAllowed)
+		return
+	}
+	// check to see if an id was provided
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil{
+		respondWithError(w,http.StatusNotFound,"Invalid UUID")
+		return
+	}
+
+	// check to see if authenication header exists
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w,http.StatusUnauthorized,err.Error())
+		return
+	}
+	userid, err := auth.ValidateJWT(token, cfg.secret)
+	if err != nil {
+		respondWithError(w,http.StatusUnauthorized,"Bad Token " + err.Error())
+		return
+	}
+	// get the chirp to be deleted
+	var chirp database.Chirp
+	chirp,err = cfg.DB.ShowOneChirp(r.Context(),chirpID)
+	if err != nil{
+		respondWithError(w,http.StatusUnauthorized,"Unknown Chirp")
+		return
+	}
+	if chirp.UserID.UUID != userid{
+		respondWithError(w,http.StatusForbidden,"")
+		return
+	}
+	err = cfg.DB.DeleteChirp(r.Context(), chirpID)
+	if err != nil{
+		respondWithError(w,http.StatusNotFound,"Delete Error")
+	}
+	respondWithJSON(w,http.StatusNoContent,"")
+
 }
 
 func main(){
@@ -472,7 +516,6 @@ func main(){
 		metrics(cfg, w, r)
 	} )
 	mux.HandleFunc("POST /admin/reset", cfg.reset)
-	//mux.HandleFunc("POST /api/validate_chirp", validateChirp)
 	mux.HandleFunc("POST /api/chirps", cfg.chirps)
 	mux.HandleFunc("POST /api/users", cfg.createUser)
 	mux.HandleFunc("POST /api/login",cfg.login)
@@ -481,6 +524,7 @@ func main(){
 	mux.HandleFunc("PUT /api/users", cfg.updateuser)
 	mux.HandleFunc("GET /api/chirps", cfg.showChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.showOneChirp)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", cfg.deleteChirp)
 	//Starting the new server
 	if err := srv.ListenAndServe(); err != nil {
         panic(err)
