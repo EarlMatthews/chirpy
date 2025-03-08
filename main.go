@@ -31,17 +31,19 @@ type Users struct {
 	UpdatedAt string `json:"updated_at"`
 	Email     string `json:"email"`
 	Password  string  `json:"password,omitempty"`
-	//Expires	string	`json:"expires_in_seconds,omitempty"`
 	Token	string	`json:"token,omitempty"`
 	RefreshToken string	`json:"refresh_token"`
+	IsChirpyRed bool `json:"is_chirpy_red"`
 }
 
-// type UsersNoPassword struct {
-// 	ID        string `json:"id"`
-// 	CreatedAt string `json:"created_at"`
-// 	UpdatedAt string `json:"updated_at"`
-// 	Email     string `json:"email"`
-// }
+type WebhookRequest struct {
+	Event string	`json:"event"`
+	Data  UserData 	`json:"data"`
+}
+
+type UserData struct {
+	UserID string `json:"user_id"`
+}
 
 type Chirp struct {
 	Body string `json:"body"`
@@ -87,11 +89,12 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
 		return
 	}
 
-	// Declare a variable 'retrUser' of type database.User to store the retrieved user data from the database.
+	// Declare a variable 'retrUser' of type Users to store the retrieved user data from the database.
 	var retrUser database.User
 
 	// Attempt to log in the user by fetching the user with the given email from the database.
-	retrUser, err = cfg.DB.Login(r.Context(),user.Email)
+	
+	retrUser, err = cfg.DB.Login(r.Context(), user.Email)
 	// If there's an error (e.g., user not found), respond with an Unauthorized status and message.
 	if err != nil{
 		respondWithError(w,http.StatusUnauthorized, "Incorrect email or password")
@@ -106,6 +109,7 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
     		CreatedAt: retrUser.CreatedAt.Time.Format(time.RFC3339), // Formats to ISO-8601
     		UpdatedAt: retrUser.UpdatedAt.Time.Format(time.RFC3339),
     		Email:		retrUser.Email,
+			IsChirpyRed: retrUser.IsChirpyRed.Bool,
 			}
 
 		// Generate a JWT token for the authenticated user.
@@ -400,7 +404,7 @@ func (cfg *apiConfig) updateuser(w http.ResponseWriter, r *http.Request){
 		//http.Error(w, "Method is not PUT", http.StatusMethodNotAllowed)
 		return
 	}
-
+	
 	token, err := auth.GetBearerToken(r.Header)
 	if err != nil {
 		respondWithError(w,http.StatusUnauthorized,err.Error())
@@ -421,6 +425,8 @@ func (cfg *apiConfig) updateuser(w http.ResponseWriter, r *http.Request){
 		if err != nil{
 			respondWithError(w,http.StatusUnauthorized, err.Error())
 		}
+	defer r.Body.Close()
+
 	ui.Password, err = auth.HashPassword(ui.Password)
 	if err != nil{
 		respondWithError(w, http.StatusUnauthorized, err.Error())
@@ -484,6 +490,35 @@ func (cfg *apiConfig) deleteChirp(w http.ResponseWriter, r *http.Request){
 
 }
 
+func (cfg *apiConfig) chripyRed(w http.ResponseWriter, r *http.Request)  {
+	// Check if the request method is POST. If not, return without processing.
+	if r.Method != http.MethodPost {
+		//http.Error(w, "Method is not POST", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req WebhookRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "Invalid JSON request", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	if req.Event != "user.upgraded" {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	userID, _ := uuid.Parse(req.Data.UserID)
+	err = cfg.DB.UpgradeChripyRed(r.Context(), userID)
+	if err != nil{
+		respondWithError(w, http.StatusNotFound, "")
+		return
+	}
+	respondWithJSON(w,http.StatusNoContent,"")
+}
+
 func main(){
 	err := godotenv.Load()
 	if err != nil {
@@ -521,6 +556,7 @@ func main(){
 	mux.HandleFunc("POST /api/login",cfg.login)
 	mux.HandleFunc("POST /api/refresh", cfg.refresh)
 	mux.HandleFunc("POST /api/revoke", cfg.revoke)
+	mux.HandleFunc("POST /api/polka/webhooks", cfg.chripyRed)
 	mux.HandleFunc("PUT /api/users", cfg.updateuser)
 	mux.HandleFunc("GET /api/chirps", cfg.showChirps)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", cfg.showOneChirp)

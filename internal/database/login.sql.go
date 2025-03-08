@@ -7,32 +7,24 @@ package database
 
 import (
 	"context"
-	"database/sql"
 
 	"github.com/google/uuid"
 )
 
 const login = `-- name: Login :one
-SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email = $1
+SELECT id, created_at, updated_at, email, hashed_password, is_chirpy_red FROM users WHERE email = $1
 `
 
-type LoginRow struct {
-	ID             uuid.UUID
-	CreatedAt      sql.NullTime
-	UpdatedAt      sql.NullTime
-	Email          string
-	HashedPassword string
-}
-
-func (q *Queries) Login(ctx context.Context, email string) (LoginRow, error) {
+func (q *Queries) Login(ctx context.Context, email string) (User, error) {
 	row := q.db.QueryRowContext(ctx, login, email)
-	var i LoginRow
+	var i User
 	err := row.Scan(
 		&i.ID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }
