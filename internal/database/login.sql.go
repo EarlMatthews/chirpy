@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/google/uuid"
 )
@@ -15,9 +16,17 @@ const login = `-- name: Login :one
 SELECT id, created_at, updated_at, email, hashed_password FROM users WHERE email = $1
 `
 
-func (q *Queries) Login(ctx context.Context, email string) (User, error) {
+type LoginRow struct {
+	ID             uuid.UUID
+	CreatedAt      sql.NullTime
+	UpdatedAt      sql.NullTime
+	Email          string
+	HashedPassword string
+}
+
+func (q *Queries) Login(ctx context.Context, email string) (LoginRow, error) {
 	row := q.db.QueryRowContext(ctx, login, email)
-	var i User
+	var i LoginRow
 	err := row.Scan(
 		&i.ID,
 		&i.CreatedAt,
@@ -87,7 +96,7 @@ UPDATE users
 SET email = $2,
     hashed_password = $3
 WHERE id = $1
-RETURNING id, created_at, updated_at, email, hashed_password
+RETURNING id, created_at, updated_at, email, hashed_password, is_chirpy_red
 `
 
 type UpdateAuthParams struct {
@@ -105,6 +114,7 @@ func (q *Queries) UpdateAuth(ctx context.Context, arg UpdateAuthParams) (User, e
 		&i.UpdatedAt,
 		&i.Email,
 		&i.HashedPassword,
+		&i.IsChirpyRed,
 	)
 	return i, err
 }

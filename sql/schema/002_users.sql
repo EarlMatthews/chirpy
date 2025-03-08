@@ -3,11 +3,10 @@ CREATE TABLE users (
     id UUID PRIMARY KEY,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    email TEXT NOT NULL UNIQUE
+    email TEXT NOT NULL UNIQUE,
+    hashed_password TEXT NOT NULL DEFAULT 'unset',
+    is_chirpy_red BOOLEAN DEFAULT FALSE
 );
-
-ALTER TABLE users
-ADD hashed_password TEXT NOT NULL DEFAULT 'unset';
 
 CREATE TABLE chirps( 
     id UUID PRIMARY KEY,
@@ -28,5 +27,6 @@ CREATE TABLE refresh_tokens(
 
 -- +goose Down
 DROP TABLE chirps;
-DROP TABLE users;
 DROP TABLE refresh_tokens;
+DROP TABLE users;
+
