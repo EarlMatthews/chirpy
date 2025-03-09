@@ -22,7 +22,7 @@ type apiConfig struct{
 	DB *database.Queries
 	platform string
 	secret	string
-	
+	polka_key string
 }
 
 type Users struct {
@@ -497,8 +497,19 @@ func (cfg *apiConfig) chripyRed(w http.ResponseWriter, r *http.Request)  {
 		return
 	}
 
+	header_apikey, err := auth.GetAPIKey(r.Header)
+	if err != nil{
+		respondWithError(w,http.StatusUnauthorized,"Bad API Key")
+		return
+	}
+
+	if header_apikey != cfg.polka_key{
+		respondWithError(w,http.StatusUnauthorized,"Bad API Key")
+		return
+	}
+
 	var req WebhookRequest
-	err := json.NewDecoder(r.Body).Decode(&req)
+	err = json.NewDecoder(r.Body).Decode(&req)
 	if err != nil {
 		http.Error(w, "Invalid JSON request", http.StatusBadRequest)
 		return
@@ -535,7 +546,7 @@ func main(){
 
 	dbQueries := database.New(db)
 	mux := http.NewServeMux()
-	cfg := &apiConfig{fileserverHits: atomic.Int32{}, DB: dbQueries, platform: os.Getenv("PLATFORM"), secret: os.Getenv("SECRET")}
+	cfg := &apiConfig{fileserverHits: atomic.Int32{}, DB: dbQueries, platform: os.Getenv("PLATFORM"), secret: os.Getenv("SECRET"), polka_key: os.Getenv("POLKA_KEY")}
 	// Create a New server
 	srv := http.Server{
 		Addr: ":8888",

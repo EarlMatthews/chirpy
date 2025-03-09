@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"github.com/EarlMatthews/chirpy/internal/auth"
 	"net/http"
+	//"strings"
 )
 
 func TestHashPassword(t *testing.T) {
@@ -18,6 +19,63 @@ func TestHashPassword(t *testing.T) {
 
 	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); err != nil {
 		t.Errorf("Hashed password does not match original password")
+	}
+}
+
+func TestGetAPIKey(t *testing.T) {
+	testCases := []struct {
+		headers    http.Header
+		expected   string
+		expectErr  bool
+	}{
+		{
+			headers: http.Header{
+				"Authorization": []string{"Bearer THE_KEY_HERE"},
+			},
+			expected: "",
+			expectErr: true,
+		},
+		{
+			headers: http.Header{
+				"Authorization": []string{"ApiKey THE_KEY_HERE"},
+			},
+			expected: "THE_KEY_HERE",
+			expectErr: false,
+		},
+		{
+			headers: http.Header{
+				"Authorization": []string{"ApiKey THE_KEY_HERE AND_ANOTHER_PART"},
+			},
+			expected: "",
+			expectErr: true,
+		},
+		{
+			headers: http.Header{
+				"Authorization": []string{"ApiKey"},
+			},
+			expected: "",
+			expectErr: true,
+		},
+		{
+			headers: http.Header{
+				"Authorization": []string{},
+			},
+			expected: "",
+			expectErr: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		key, err := auth.GetAPIKey(tc.headers)
+		if tc.expectErr && err == nil {
+			t.Errorf("Expected an error for headers %v, but got none", tc.headers)
+		}
+		if !tc.expectErr && err != nil {
+			t.Errorf("Unexpected error for headers %v: %v", tc.headers, err)
+		}
+		if key != tc.expected {
+			t.Errorf("Expected API Key '%s', but got '%s' for headers %v", tc.expected, key, tc.headers)
+		}
 	}
 }
 
