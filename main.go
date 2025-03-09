@@ -152,7 +152,25 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
 }
 
 func (cfg *apiConfig) showChirps(w http.ResponseWriter, r *http.Request){
-	
+	authorIDStr := r.URL.Query().Get("author_id")
+	if authorIDStr != ""{
+		authorID, err := uuid.Parse(authorIDStr)
+		if err != nil{
+			respondWithError(w,http.StatusBadRequest,"Bad Author ID")
+			return
+		}
+		NullAuthorID := uuid.NullUUID{
+			UUID: authorID,
+			Valid: true,
+		}
+		dbChrip, err := cfg.DB.ShowOneChirpByauthor(r.Context(),NullAuthorID)
+		if err != nil{
+			respondWithError(w,http.StatusBadRequest,"Could not find Chirp " + err.Error())
+			return
+		}
+		respondWithJSON(w,http.StatusOK,dbChrip)
+		return
+	}
 	dbChirp, err := cfg.DB.ShowChirpsAll(r.Context())
 	if err != nil{
 	respondWithError(w,http.StatusBadRequest, "Error Connecting to Database" + err.Error())

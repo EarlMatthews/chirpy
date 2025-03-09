@@ -14,3 +14,6 @@ SELECT * FROM chirps;
 
 -- name: ShowOneChirp :one
 SELECT * from chirps where id = $1;
+
+-- name: ShowOneChirpByauthor :many
+SELECT * from chirps where user_id = $1;
