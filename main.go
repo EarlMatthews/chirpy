@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -153,6 +154,7 @@ func (cfg *apiConfig) login(w http.ResponseWriter, r *http.Request){
 
 func (cfg *apiConfig) showChirps(w http.ResponseWriter, r *http.Request){
 	authorIDStr := r.URL.Query().Get("author_id")
+	is_desc := r.URL.Query().Get("sort") == "desc"
 	if authorIDStr != ""{
 		authorID, err := uuid.Parse(authorIDStr)
 		if err != nil{
@@ -177,6 +179,15 @@ func (cfg *apiConfig) showChirps(w http.ResponseWriter, r *http.Request){
 	return
 	}
 
+	if !is_desc {
+	sort.Slice(dbChirp,func(i, j int) bool {
+        return dbChirp[i].CreatedAt.Time.Before(dbChirp[j].CreatedAt.Time)
+    	})
+	}else{
+		sort.Slice(dbChirp,func(i, j int) bool {
+        return dbChirp[i].CreatedAt.Time.After(dbChirp[j].CreatedAt.Time)
+    	})
+	}
 	var chirpResponse []ChirpShown
 	for _, chirp := range dbChirp {
 		chirpResponse = append(chirpResponse, ChirpShown{
@@ -187,6 +198,7 @@ func (cfg *apiConfig) showChirps(w http.ResponseWriter, r *http.Request){
 			UserID: chirp.UserID.UUID.String(),
 		})
 	}
+	
 	respondWithJSON(w, http.StatusOK,chirpResponse)
 }
 
